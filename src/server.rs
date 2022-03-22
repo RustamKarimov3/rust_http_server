@@ -1,10 +1,18 @@
 use std::net::TcpListener;
-use std::io::Read;
-use crate::http::Request;
+use std::io::{Read};
+use crate::http::{Request, Response, StatusCode, ParseError};
 use std::convert::TryFrom;
 
 pub struct Server {
 	addr: String,
+}
+
+pub trait Handler {
+	fn handle_req(&self, req: &Request) -> Response;
+	fn handle_bad_req(&self, req: &ParseError) -> Response {
+		println!("Failed parse");
+		Response::new(StatusCode::BadRequest, None)
+	}
 }
 
 impl Server {
@@ -14,7 +22,7 @@ impl Server {
 			}
 	}
 
-	pub fn start(self) {
+	pub fn start(self, mut handler: impl Handler) {
 			println!("Listening on {}", self.addr);
 			let listener = TcpListener::bind(&self.addr).unwrap();
 
@@ -27,14 +35,15 @@ impl Server {
 							Ok(_) => {
 								println!("Received a request: {}", String::from_utf8_lossy(&buffer));
 
-								 match Request::try_from(&buffer[..]) {
-									Ok(_) => {
-									}
-									Err(e) => {
-										println!("Failed: {}", e);
-									}
-								}
-							}
+								let response = match Request::try_from(&buffer[..]) {
+									Ok(req) => handler.handle_req(&req),
+									Err(e) => handler.handle_bad_req(&e),
+								};
+
+								if let Err(e) = response.send(&mut stream) {
+									println!("Failed {}", e);
+								};
+						}
 
 							Err(e) => {
 								println!("Crashed with: {}", e)
